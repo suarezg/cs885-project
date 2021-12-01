@@ -23,7 +23,7 @@ Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'
 
 class DQN(nn.Module):
 
-    def __init__(self, n_inputs, n_actions, lr=1e-3, discount=0.95, start_epsilon=1.0, epsilon_max_step=20000, epsilon_min=0.01, buffer_size=10000, batch_size=64, 
+    def __init__(self, n_inputs, n_actions, lr=1e-4, discount=0.95, start_epsilon=1.0, epsilon_max_step=20000, epsilon_min=0.01, buffer_size=10000, batch_size=64, 
                     target_update_period=100, device='cpu'):
         super(DQN, self).__init__()
         # Both Actor and Critic Network will share neural network parameters:
@@ -32,18 +32,17 @@ class DQN(nn.Module):
         self.n_inputs = n_inputs
         self.n_actions = n_actions
         
-        # configuration of CNN from https://github.com/uvipen/Super-mario-bros-PPO-pytorch
+        # configuration of CNN from paper General Deep Reinforcement Learning in NES games - Leblanc and Lee
+        # 
         self.qnet = nn.Sequential(
-            nn.Conv2d(n_inputs, 32, 3, stride=2, padding=1),
+            nn.Conv2d(n_inputs, 32, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(64, 64, kernel_size=2, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 6 * 6, 512),
+            nn.Linear(64 * 8 * 8, 512),
             nn.ReLU(),
             nn.Linear(512, n_actions)
         )
