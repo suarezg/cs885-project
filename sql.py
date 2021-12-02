@@ -22,11 +22,10 @@ Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'
 # https://github.com/seungeunrho/minimalRL and
 # https://github.com/uvipen/Super-mario-bros-PPO-pytorch
 
-class DQN():
+class SQL():
 
-    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.90, start_epsilon=1.0, epsilon_decay=0.999, epsilon_min=0.01, buffer_size=30000, batch_size=32, 
+    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.90, temperature=1, buffer_size=30000, batch_size=32, 
                     target_update_period=100, device='cpu'):
-        super(DQN, self).__init__()
         # Both Actor and Critic Network will share neural network parameters:
         # this requires that the loss function be written using both the
         # policy and value function
@@ -60,11 +59,9 @@ class DQN():
         # learning rate
         self.lr = lr
 
-        # epsilon for epsilon greedy exploration
-        self.epsilon = start_epsilon
-        self.decay = epsilon_decay
-        self.epsilon_min = epsilon_min
-        #self.epsilon_steps = epsilon_max_step    
+        # temperature parameter for exploration
+        self.temperature = temperature
+
         self.target_update_period = target_update_period
 
         self.device = device
@@ -72,7 +69,6 @@ class DQN():
         self.target.to(device)
 
     def forward(self, x):
-
         return self.qnet(x)    
 
 
@@ -107,6 +103,10 @@ class DQN():
             tp.data.copy_(p.data)
     
 
+    def cmax(self, qvals):
+        cmax = self.temperature * torch.logsumexp(qvals/self.temperature, dim=1)  
+        return cmax
+
     def update(self, epi):
         if len(self.experiences) < self.batch_size:
             return # not enough experiences in replay buffer
@@ -116,7 +116,7 @@ class DQN():
         qvals = self.qnet(states)
         qvals = qvals.gather(1, actions.view(-1,1)).squeeze()
 
-        q2vals = torch.max(self.target(next_states), dim=1).values
+        q2vals = self.cmax(self.target(next_states))
 
         td_targets = rewards + self.discount * q2vals * (1-done)
 
@@ -130,21 +130,19 @@ class DQN():
             self.update_target()
 
     def get_action(self, state):
-        # epsilon greedy search
-        if np.random.rand() < self.epsilon:
-            action = np.random.randint(0, self.n_actions)
-        else:
-            qvals = self.qnet(state.unsqueeze(0))
-            action = torch.argmax(qvals, dim=1).item()
+        # softmax exploration
+        softmax = torch.nn.Softmax(dim=0)
+        qvals = self.qnet(state.unsqueeze(0)).squeeze()
+        probabilities = softmax(qvals / self.temperature).detach().cpu().numpy()
+        action = np.random.choice(self.n_actions, p=probabilities)
 
-        # update epsilon
-        self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
         return action
 
     def save_model(self, path):
         torch.save(self.qnet.state_dict, path) 
 
-def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./dqn_models', render=False):
+
+def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./sql_models', render=False):
 
     device = 'cuda' if torch.cuda.is_available else 'cpu'
 
@@ -154,14 +152,15 @@ def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./dqn_models
     n_channels = state_shape[0]
     n_actions = env.action_space.n
 
-    model = DQN(n_channels, n_actions, device=device)
+    model = SQL(n_channels, n_actions, device=device)
     
     episode_scores = np.zeros(n_episodes)
     last_x_pos = np.zeros(n_episodes)
     episode_steps = np.zeros(n_episodes)
-
     cumulative_score = 0
     flags_captured = 0
+    
+
     for epi in tqdm(range(n_episodes)):
         state = env.reset()
         if render: env.render()
@@ -175,7 +174,7 @@ def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./dqn_models
 
             # execute action
             next_state, reward, done, info = env.step(action)
-            step_count +=1
+            step_count += 1
             if render: env.render()
 
             # store in replay buffer
@@ -203,32 +202,33 @@ def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./dqn_models
 
         # save checkpoint
         if save_interval != 0 and epi != 0 and epi % save_interval == 0:
-            path = "%s/dqn_%d.pt" % (dir, epi)
+            path = "%s/sql_%d.pt" % (dir, epi)
             print(f"Saving model to {path}")
-            model.save_model(path)
+            model.save_model(path) 
 
             np.savetxt("%s/rewards_ep_%d.csv" %(dir, epi), episode_scores[:epi])
             np.savetxt("%s/pos_ep_%d.csv" % (dir, epi), last_x_pos[:epi])
             np.savetxt("%s/steps_ep_%d.csv" %(dir, epi), episode_steps[:epi])
         
+        
 
     env.close()
     # save final model
-    path = "%s/dqn_final.pt" % (dir)
+    path = "%s/sql_final.pt" % (dir)
     model.save_model(path)
 
     print(f"Flags captured: {flags_captured}")
 
     # save episode scores to csv
-    np.savetxt("%s/dqn_episode_rewards.csv" % dir , episode_scores, delimiter=",")
+    np.savetxt("%s/sql_episode_rewards.csv" % dir, episode_scores, delimiter=",")
 
-    # save across positions
-    np.savetxt("%s/dqn_episode_pos.csv" % dir, last_x_pos, delimiter=",")
+    # save across positions to csv
+    np.savetxt("%s/sql_episode_pos.csv" % dir, last_x_pos, delimiter=",")
 
     # save episode steps to cvs
-    np.savetxt("%s/dqn_episode_steps.csv" % dir, episode_steps, delimiter=",")
+    np.savetxt("%s/sql_episode_steps.csv" % dir, episode_steps, delimiter=",")
         
-# def test_model(modelpath="./dqn/dqn_final.pt", n_iterations=10, render=True):
+# def test_model(modelpath="./sql/sql_final.pt", n_iterations=10, render=True):
 #     device = 'cuda' if torch.cuda.is_available else 'cpu'
 
 #     # create environment
@@ -237,7 +237,7 @@ def train(n_episodes=5000, print_interval=20, save_interval=0, dir='./dqn_models
 #     n_channels = state_shape[0]
 #     n_actions = env.action_space.n
 
-#     model = DQN(n_channels, n_actions, device=device)
+#     model = SQL(n_channels, n_actions, device=device)
 #     model.load_state_dict(torch.load(modelpath))
     
     

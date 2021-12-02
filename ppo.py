@@ -21,40 +21,37 @@ Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'
 
 class PPO(nn.Module):
 
-    def __init__(self, n_inputs, n_actions, lr=1e-3, gamma=0.95, lam=0.95, eps=0.2, c1=0.5, c2=0.01, device='cpu'):
+    def __init__(self, n_inputs, n_actions, lr=1e-4, gamma=0.95, lam=0.95, eps=0.2, c1=0.5, c2=0.01, device='cpu'):
         super(PPO, self).__init__()
         # Both Actor and Critic Network will share neural network parameters:
         # this requires that the loss function be written using both the
         # policy and value function
 
-         # architecture of CNN from https://github.com/uvipen/Super-mario-bros-PPO-pytorch
+         # configuration of CNN from paper General Deep Reinforcement Learning in NES games - Leblanc and Lee
         self.actor = nn.Sequential(
-            nn.Conv2d(n_inputs, 32, 3, stride=2, padding=1),
+            nn.Conv2d(n_inputs, 32, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(64, 64, kernel_size=2, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 6 * 6, 512),
+            nn.Linear(64 * 8 * 8, 512),
             nn.ReLU(),
             nn.Linear(512, n_actions),
             nn.Softmax(dim=-1)
         )
 
         self.critic = nn.Sequential(
-            nn.Conv2d(n_inputs, 32, 3, stride=2, padding=1),
+            nn.Conv2d(n_inputs, 32, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            nn.Conv2d(64, 64, kernel_size=2, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 6 * 6, 512),
+            nn.Linear(64 * 8 * 8, 512),
+            nn.ReLU(),
             nn.Linear(512, 1)
         )
             
@@ -79,9 +76,8 @@ class PPO(nn.Module):
         self.c2 = c2
 
         self.device = device
-        self.to(device)
-
-    
+        self.actor.to(device)
+        self.critic.to(device)
 
     def actor_pass(self, x):
         return self.actor(x)
@@ -170,7 +166,12 @@ class PPO(nn.Module):
 
         return action, probs
 
-def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_interval=0, dir='./ppo_models', render=False):
+    def save_model(self, actor_path, critic_path):
+        torch.save(self.actor.state_dict, actor_path)
+        torch.save(self.critic.state_dict, critic_path) 
+
+
+def train(n_episodes=5000, horizon=512, k_epochs=30, print_interval=20, save_interval=0, dir='./ppo_models', render=False):
     
     device = 'cuda' if torch.cuda.is_available else 'cpu'
 
@@ -183,7 +184,8 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
     model = PPO(n_channels, n_actions, device=device)
 
     episode_scores = np.zeros(n_episodes)
-    x_pos_in_episode = np.zeros(n_episodes)
+    last_x_pos = np.zeros(n_episodes)
+    episode_steps = np.zeros(n_episodes)
     cumulative_score = 0
 
 
@@ -195,6 +197,7 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
     num_flags = 0
 
     epi = 0
+    step_count = 0
     pbar = tqdm(total=n_episodes)
     while epi < n_episodes:
         
@@ -203,6 +206,7 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
             action, probs = model.get_action(state_tensor.unsqueeze(0))
 
             next_state , reward, done, info = env.step(action)
+            step_count +=1
             if render: env.render()
                     
             # store experience
@@ -219,7 +223,8 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
                 episode_scores[epi] = score
                 cumulative_score += score
                 
-                x_pos_in_episode[epi] = info['x_pos']
+                last_x_pos[epi] = info['x_pos']
+                episode_steps[epi] = step_count
 
                 if info['flag_get']:
                     num_flags += 1
@@ -231,12 +236,21 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
 
                 # save checkpoint
                 if save_interval != 0 and epi != 0 and epi % save_interval == 0:
-                    path = "%s/ppo_%d.pt" % (dir, epi)
-                    print(f"Saving model to {path}")
-                    torch.save(model.state_dict, path)
+                    actor_path = "%s/ppo_actor_%d.pt" % (dir, epi)
+                    critic_path = "%s/ppo_critic_%d.pth" %(dir, epi)
+                    print(f"Saving actor and critic model to {actor_path} and {critic_path}")
+                    model.save_model(actor_path, critic_path)
+
+
+                    np.savetxt("%s/rewards_ep_%d.csv" %(dir, epi), episode_scores[:epi], delimiter=',')
+                    np.savetxt("%s/pos_ep_%d.csv" % (dir, epi), last_x_pos[:epi], delimiter=',')
+                    np.savetxt("%s/steps_ep_%d.csv" %(dir, epi), episode_steps[:epi], delimiter=',')
+
+
 
                 epi += 1
                 score = 0
+                step_count = 0
                 pbar.update(1)
                 if epi == n_episodes:
                     break
@@ -253,52 +267,57 @@ def train(n_episodes=2500, horizon=1024, k_epochs=30, print_interval=20, save_in
     print(f"Flags captured: {num_flags}")
 
     # save final model
-    path = "%s/ppo_final.pt" % (dir)
-    torch.save(model.state_dict(), path)
+    actor_path = "%s/ppo_actor_final.pt" % (dir)
+    critic_path = "%s/ppo_critic_final.pt" % (dir)
+    model.save_model(actor_path, critic_path)
 
     # save episode scores to csv
-    np.savetxt("ppo_episode_rewards.csv", episode_scores, delimiter=",")
+    np.savetxt("%s/ppo_episode_rewards.csv" % dir, episode_scores, delimiter=',')
 
     # save x positions
-    np.savetxt("ppo_episode_pos.csv", x_pos_in_episode, delimiter=',')
+    np.savetxt("%s/ppo_episode_pos.csv" % dir, last_x_pos, delimiter=',')
 
-def test(path="./ppo_models/ppo_final.pt", render=True):
-    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    # save episode steps to cvs
+    np.savetxt("%s/ppo_episode_steps.csv" % dir, episode_steps, delimiter=',')
 
-    # create environment
-    env = mario_env_wrapper.create_mario_env()
-    state_shape = env.observation_space.shape
-    n_channels = state_shape[0]
-    n_actions = env.action_space.n
 
-    #load model
-    model = PPO(n_channels, n_actions, device=device)
-    model.load_state_dict(torch.load(path))    
+# def test(path="./ppo_models/ppo_final.pt", render=True):
+#     device = 'cuda' if torch.cuda.is_available else 'cpu'
 
-    state = env.reset()
-    if render: env.render()
-    state = torch.from_numpy(state.__array__()).unsqueeze(0).to(device)
-    done = False
+#     # create environment
+#     env = mario_env_wrapper.create_mario_env()
+#     state_shape = env.observation_space.shape
+#     n_channels = state_shape[0]
+#     n_actions = env.action_space.n
 
-    score = 0
-    while not done:
-        probs = model.actor(state)
-        a = torch.argmax(probs).item()
+#     #load model
+#     model = PPO(n_channels, n_actions, device=device)
+#     model.load_state_dict(torch.load(path))    
 
-        s_prime , r, done, info = env.step(a)
-        if render: env.render()
+#     state = env.reset()
+#     if render: env.render()
+#     state = torch.from_numpy(state.__array__()).unsqueeze(0).to(device)
+#     done = False
 
-        state = torch.from_numpy(s_prime.__array__()).unsqueeze(0).to(device)
+#     score = 0
+#     while not done:
+#         probs = model.actor(state)
+#         a = torch.argmax(probs).item()
 
-        score += r
+#         s_prime , r, done, info = env.step(a)
+#         if render: env.render()
 
-    env.close()
-    print(f"Evaluation score: {score}")
+#         state = torch.from_numpy(s_prime.__array__()).unsqueeze(0).to(device)
+
+#         score += r
+
+#     env.close()
+#     print(f"Evaluation score: {score}")
 
 
 def main():
-    train(render=True)
-    test(render=True)    
+    train(n_episodes=2500, horizon=1024, save_interval=100, render=False)
+    # test(render=True)    
 
 if __name__ == '__main__':
     main()
