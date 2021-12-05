@@ -24,8 +24,8 @@ Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'
 
 class DQN():
 
-    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.90, start_epsilon=1.0, epsilon_decay=0.999, epsilon_min=0.01, buffer_size=30000, batch_size=32, 
-                    target_update_period=100, device='cpu'):
+    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.95, start_epsilon=1.0, epsilon_decay=0.999, epsilon_min=0.01, buffer_size=30000, batch_size=32, 
+                    target_update_period=10, device='cpu'):
         super(DQN, self).__init__()
         # Both Actor and Critic Network will share neural network parameters:
         # this requires that the loss function be written using both the

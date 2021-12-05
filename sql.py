@@ -24,8 +24,8 @@ Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'
 
 class SQL():
 
-    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.90, temperature=1, buffer_size=30000, batch_size=32, 
-                    target_update_period=100, device='cpu'):
+    def __init__(self, n_inputs, n_actions, lr=2.5e-4, discount=0.95, temperature=1, buffer_size=30000, batch_size=32, 
+                    target_update_period=10, device='cpu'):
         # Both Actor and Critic Network will share neural network parameters:
         # this requires that the loss function be written using both the
         # policy and value function

@@ -32,8 +32,8 @@ plt.xlabel('Episode')
 plt.xlim(AVERAGING_WINDOW, NUM_EPISODES)
 plt.ylabel('Total Rewards')
 plt.title('Reward Comparison')
-plt.show()
 plt.savefig('reward-comparison.png')
+plt.show()
 plt.clf()
 
 
@@ -45,8 +45,8 @@ plt.xlabel('Episode')
 plt.xlim(AVERAGING_WINDOW, NUM_EPISODES)
 plt.ylabel('Farthest Position')
 plt.title('Position Comparison')
-plt.show()
 plt.savefig('position-comparison.png')
+plt.show()
 plt.clf()
 
 
@@ -58,8 +58,8 @@ plt.xlabel('Episode')
 plt.xlim(AVERAGING_WINDOW, NUM_EPISODES)
 plt.ylabel('Steps Taken')
 plt.title('Steps Comparison')
-plt.show()
 plt.savefig('steps-comparison.png')
+plt.show()
 plt.clf()
 
 

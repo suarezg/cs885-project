@@ -147,7 +147,8 @@ class PPO(nn.Module):
             surr2 = torch.clamp(ratio, 1-self.eps, 1+self.eps)  * advantages
             
             policy_loss = torch.min(surr1, surr2).mean()
-            mse_loss = nn.MSELoss(reduction='mean')(V, target.detach())
+            #mse_loss = nn.MSELoss(reduction='mean')(V, target.detach())
+            mse_loss = nn.SmoothL1Loss(reduction='mean')(V, target.detach())
             entropy_loss = Categorical(probs).entropy().mean()
 
             loss = -policy_loss + self.c1 * mse_loss - self.c2 * entropy_loss
